@@ -60,6 +60,7 @@
       padding: 10px 16px;
       border-radius: 18px;
       word-wrap: break-word;
+      overflow-wrap: break-word;
       white-space: pre-wrap;
     }
 
@@ -170,6 +171,16 @@
       0%, 100% { opacity: 0.2; }
       50% { opacity: 1; }
     }
+
+    .status {
+      text-align: center;
+      font-size: 11px;
+      color: #bbb;
+      padding: 4px 0;
+    }
+
+    .status.connected { color: #4caf50; }
+    .status.disconnected { color: #f44336; }
   </style>
 </head>
 <body>
@@ -185,8 +196,10 @@
       <span>●</span> <span>●</span> <span>●</span>
     </div>
 
+    <div class="status" id="status">connecting…</div>
+
     <div class="input-area">
-      <input type="text" id="input" placeholder="Ask pi anything…" autofocus />
+      <input type="text" id="input" placeholder="Ask pi anything… (/help for commands)" autofocus />
       <button class="send-btn" id="send" aria-label="Send">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <line x1="22" y1="2" x2="11" y2="13"></line>
@@ -201,13 +214,75 @@
     const input = document.getElementById('input');
     const sendBtn = document.getElementById('send');
     const typing = document.getElementById('typing');
+    const statusEl = document.getElementById('status');
 
-    function addMessage(text, role) {
+    // WebSocket connection — streams responses in real-time
+    let ws;
+    let streamingMsg = null;
+
+    function connect() {
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      ws = new WebSocket(`${proto}://${location.host}/ws`);
+
+      ws.onopen = () => {
+        statusEl.textContent = '● connected';
+        statusEl.className = 'status connected';
+      };
+
+      ws.onclose = () => {
+        statusEl.textContent = '● disconnected — retrying…';
+        statusEl.className = 'status disconnected';
+        setTimeout(connect, 3000);
+      };
+
+      ws.onerror = () => {};
+
+      ws.onmessage = (e) => {
+        const data = JSON.parse(e.data);
+
+        if (data.type === 'chunk') {
+          // Streaming — update the current agent message live
+          if (!streamingMsg) {
+            streamingMsg = addMessageRaw('', 'agent');
+          }
+          streamingMsg._text += data.text;
+          streamingMsg.el.innerHTML = formatAgent(streamingMsg._text);
+          messages.scrollTop = messages.scrollHeight;
+        }
+
+        if (data.type === 'done') {
+          if (streamingMsg) {
+            streamingMsg._text = data.text;
+            streamingMsg.el.innerHTML = formatAgent(data.text);
+            streamingMsg = null;
+          } else {
+            addMessage(data.text, 'agent');
+          }
+          showTyping(false);
+        }
+
+        if (data.type === 'error') {
+          addMessage(`Error: ${data.text}`, 'agent');
+          streamingMsg = null;
+          showTyping(false);
+        }
+      };
+    }
+
+    connect();
+
+    function addMessageRaw(text, role) {
       const div = document.createElement('div');
       div.className = `msg ${role}`;
       div.innerHTML = role === 'agent' ? formatAgent(text) : escHtml(text);
       messages.appendChild(div);
       messages.scrollTop = messages.scrollHeight;
+      return { el: div, _text: text };
+    }
+
+    function addMessage(text, role) {
+      const obj = addMessageRaw(text, role);
+      return obj;
     }
 
     function escHtml(s) {
@@ -233,34 +308,35 @@
       messages.scrollTop = messages.scrollHeight;
     }
 
-    async function send() {
+    function send() {
       const text = input.value.trim();
       if (!text) return;
       input.value = '';
       addMessage(text, 'user');
-
       showTyping(true);
 
-      try {
-        const res = await fetch('/api/chat', {
+      // Try WebSocket first, fall back to REST
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ message: text }));
+      } else {
+        // REST fallback
+        fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ message: text })
-        });
-        const data = await res.json();
-        addMessage(data.reply, 'agent');
-      } catch {
-        addMessage('Could not reach pi. Is the server running?', 'agent');
+        })
+        .then(r => r.json())
+        .then(data => addMessage(data.reply, 'agent'))
+        .catch(() => addMessage('Could not reach pi.', 'agent'))
+        .finally(() => showTyping(false));
       }
-
-      showTyping(false);
     }
 
     sendBtn.addEventListener('click', send);
     input.addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
 
     // Welcome message
-    addMessage("Hello! I'm pi, your coding agent. How can I help?", 'agent');
+    addMessage("Hello! I'm pi, your coding agent. Type /help for available commands.", 'agent');
   </script>
 </body>
 </html>
