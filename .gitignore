@@ -1,4 +1,1 @@
-node_modules/
-.vercel/
-.DS_Store
-.vercel
+node_modules/\n.vercel/\n.DS_Store

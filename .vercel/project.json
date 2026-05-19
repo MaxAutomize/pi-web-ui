@@ -1,0 +1,16 @@
+{
+  "projectId": "prj_yhg058CrIHNS7jpRmp6Op3XX2Ysv",
+  "orgId": "team_IRzRWOARbX6aFKCsAqQB2wLd",
+  "projectName": "pi-web-ui",
+  "settings": {
+    "createdAt": 1779171513733,
+    "framework": null,
+    "devCommand": null,
+    "installCommand": null,
+    "buildCommand": null,
+    "outputDirectory": null,
+    "rootDirectory": null,
+    "directoryListing": false,
+    "nodeVersion": "24.x"
+  }
+}
